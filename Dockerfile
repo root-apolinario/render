@@ -1,20 +1,40 @@
+# Base: Ubuntu 22.04 (Jammy)
 FROM ubuntu:22.04
 
-# Install dependencies
-RUN apt update && \
-    apt install -y curl tmate wget python3 ca-certificates && \
-    apt clean
+# Variáveis para não travar instalação (apt-get não interativo)
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Download and install sshx directly
-RUN curl -sSf https://sshx.io/get | sh
+# Atualiza pacotes e instala dependências
+RUN apt-get update && apt-get install -y \
+    curl \
+    wget \
+    gnupg \
+    ca-certificates \
+    dumb-init \
+    git \
+    nano \
+    unzip \
+    apt-transport-https \
+    && rm -rf /var/lib/apt/lists/*
 
-# Create dummy web content to keep the Render service alive
-WORKDIR /app
-RUN echo "TMATE is running..." > index.html
+# Instala o code-server
+RUN curl -fsSL https://code-server.dev/install.sh | sh
 
-# Render requires at least one open port to keep the service alive
+# Cria usuário não-root para rodar o code-server
+RUN useradd -m coder
+USER coder
+WORKDIR /home/coder
+
+# Config padrão do code-server
+RUN mkdir -p ~/.config/code-server \
+    && echo 'bind-addr: 0.0.0.0:8080' > ~/.config/code-server/config.yaml \
+    && echo 'auth: password' >> ~/.config/code-server/config.yaml \
+    && echo 'password: changeme' >> ~/.config/code-server/config.yaml \
+    && echo 'cert: false' >> ~/.config/code-server/config.yaml
+
+# Porta padrão do Render (vai rodar em 8080)
 EXPOSE 8080
 
-# Start dummy HTTP server and sshx (foreground process)
-CMD python3 -m http.server 8080 & \
-    tmate
+# Inicializa com dumb-init para evitar problemas de PID/Signals
+ENTRYPOINT ["dumb-init", "code-server"]
+CMD ["--host", "0.0.0.0", "--port", "8080"]
